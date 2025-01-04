@@ -13,6 +13,17 @@ echo "工作目录: $WORK_DIR"
 # 安装必要的系统包
 echo "正在更新系统包..."
 apt update
+
+# 检查并安装 Caddy
+if ! command -v caddy &> /dev/null; then
+    echo "安装 Caddy..."
+    apt install -y debian-keyring debian-archive-keyring apt-transport-https
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+    apt update
+    apt install -y caddy
+fi
+
 # 安装新版本的 Go
 echo "安装新版本的 Go..."
 apt install -y git sqlite3 build-essential gcc wget
@@ -364,6 +375,15 @@ EOF
 
 # 更新 Caddy 配置
 echo "更新 Caddy 配置..."
+mkdir -p /etc/caddy
+chown -R caddy:caddy /etc/caddy
+chmod 755 /etc/caddy
+
+# 备份旧的配置文件（如果存在）
+if [ -f "/etc/caddy/Caddyfile" ]; then
+    mv /etc/caddy/Caddyfile /etc/caddy/Caddyfile.bak
+fi
+
 cat > /etc/caddy/Caddyfile << EOF
 order.076095598.xyz {
     # 允许所有跨域请求
@@ -400,6 +420,14 @@ EOF
 chown caddy:caddy /etc/caddy/Caddyfile
 chmod 644 /etc/caddy/Caddyfile
 
+# 验证配置文件是否正确更新
+if [ ! -f "/etc/caddy/Caddyfile" ]; then
+    echo "错误：Caddyfile 未能成功创建"
+    exit 1
+fi
+
+echo "Caddy 配置文件更新时间：$(stat -c %y /etc/caddy/Caddyfile)"
+
 # 重新加载系统服务
 echo "重新加载系统服务..."
 systemctl daemon-reload
@@ -430,6 +458,13 @@ fi
 # 重启 Caddy
 echo "重启 Caddy..."
 systemctl restart caddy
+
+# 检查 Caddy 状态
+if ! systemctl is-active --quiet caddy; then
+    echo "Caddy 服务启动失败，查看错误日志："
+    journalctl -u caddy -n 50 --no-pager
+    exit 1
+fi
 
 # 检查服务是否正常运行
 echo "测试服务..."
