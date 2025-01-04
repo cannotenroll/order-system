@@ -94,6 +94,9 @@ EOF
 # 创建前端目录和页面
 echo "创建前端基础页面..."
 mkdir -p $WORK_DIR/frontend/dist
+# 设置前端目录权限
+chown -R www-data:www-data $WORK_DIR/frontend
+chmod -R 755 $WORK_DIR/frontend
 
 # 创建临时前端页面
 cat > $WORK_DIR/frontend/dist/index.html << EOF
@@ -201,6 +204,7 @@ cat > $WORK_DIR/frontend/dist/index.html << EOF
 </body>
 </html>
 EOF
+chmod 644 $WORK_DIR/frontend/dist/index.html
 
 # 创建认证控制器
 echo "创建认证控制器..."
@@ -362,6 +366,13 @@ EOF
 echo "更新 Caddy 配置..."
 cat > /etc/caddy/Caddyfile << EOF
 order.076095598.xyz {
+    # 允许所有跨域请求
+    header {
+        Access-Control-Allow-Origin *
+        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+        Access-Control-Allow-Headers "Content-Type, Authorization"
+    }
+
     # API 请求转发到后端
     handle /api/* {
         reverse_proxy localhost:8080
@@ -372,12 +383,22 @@ order.076095598.xyz {
         root * /root/projects/order-system/frontend/dist
         try_files {path} /index.html
         file_server
+        # 添加安全头
+        header {
+            X-Frame-Options "SAMEORIGIN"
+            X-Content-Type-Options "nosniff"
+            X-XSS-Protection "1; mode=block"
+        }
     }
 
     # 启用 gzip 压缩
     encode gzip
 }
 EOF
+
+# 确保 Caddy 配置文件权限正确
+chown caddy:caddy /etc/caddy/Caddyfile
+chmod 644 /etc/caddy/Caddyfile
 
 # 重新加载系统服务
 echo "重新加载系统服务..."
