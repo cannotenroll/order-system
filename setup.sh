@@ -115,103 +115,11 @@ cat > $WORK_DIR/frontend/dist/index.html << EOF
 <html lang="zh">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>订餐系统</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            background-color: #f5f5f5;
-        }
-        .login-container {
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            width: 100%;
-            max-width: 400px;
-        }
-        .form-group {
-            margin-bottom: 15px;
-        }
-        label {
-            display: block;
-            margin-bottom: 5px;
-        }
-        input {
-            width: 100%;
-            padding: 8px;
-            border: 1px solid #ddd;
-            border-radius: 4px;
-            box-sizing: border-box;
-        }
-        button {
-            width: 100%;
-            padding: 10px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-        .error {
-            color: red;
-            margin-top: 10px;
-        }
-    </style>
 </head>
 <body>
-    <div class="login-container">
-        <h2 style="text-align: center;">订餐系统登录</h2>
-        <form id="loginForm">
-            <div class="form-group">
-                <label for="username">用户名：</label>
-                <input type="text" id="username" name="username" required>
-            </div>
-            <div class="form-group">
-                <label for="password">密码：</label>
-                <input type="password" id="password" name="password" required>
-            </div>
-            <button type="submit">登录</button>
-            <p id="error" class="error"></p>
-        </form>
-    </div>
-    <script>
-        document.getElementById('loginForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            
-            try {
-                const response = await fetch('/api/auth/login', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({ username, password }),
-                });
-                
-                if (response.ok) {
-                    const data = await response.json();
-                    localStorage.setItem('token', data.token);
-                    window.location.href = '/dashboard';
-                } else {
-                    const error = await response.json();
-                    document.getElementById('error').textContent = error.message || '登录失败';
-                }
-            } catch (error) {
-                document.getElementById('error').textContent = '网络错误，请稍后重试';
-            }
-        });
-    </script>
+    <h1>测试页面</h1>
+    <p>如果你能看到这个页面，说明静态文件服务正常工作。</p>
 </body>
 </html>
 EOF
@@ -386,13 +294,6 @@ fi
 
 cat > /etc/caddy/Caddyfile << EOF
 order.076095598.xyz {
-    # 允许所有跨域请求
-    header {
-        Access-Control-Allow-Origin *
-        Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-        Access-Control-Allow-Headers "Content-Type, Authorization"
-    }
-
     # API 请求转发到后端
     handle /api/* {
         reverse_proxy localhost:8080
@@ -401,14 +302,7 @@ order.076095598.xyz {
     # 静态文件服务
     handle {
         root * /root/projects/order-system/frontend/dist
-        try_files {path} /index.html
         file_server
-        # 添加安全头
-        header {
-            X-Frame-Options "SAMEORIGIN"
-            X-Content-Type-Options "nosniff"
-            X-XSS-Protection "1; mode=block"
-        }
     }
 
     # 启用 gzip 压缩
