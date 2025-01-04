@@ -13,7 +13,18 @@ echo "工作目录: $WORK_DIR"
 # 安装必要的系统包
 echo "正在更新系统包..."
 apt update
-apt install -y git golang-go sqlite3
+# 安装新版本的 Go
+echo "安装新版本的 Go..."
+apt install -y git sqlite3 build-essential gcc wget
+
+# 下载并安装 Go 1.21
+cd /tmp
+wget https://go.dev/dl/go1.21.5.linux-amd64.tar.gz
+rm -rf /usr/local/go
+tar -C /usr/local -xzf go1.21.5.linux-amd64.tar.gz
+ln -sf /usr/local/go/bin/go /usr/bin/go
+rm go1.21.5.linux-amd64.tar.gz
+cd -
 
 # 清理旧的安装（如果存在）
 echo "清理旧的安装..."
@@ -42,14 +53,27 @@ go mod init github.com/cannotenroll/order-system
 
 # 安装 Go 依赖
 echo "安装 Go 依赖..."
-go get -u github.com/gin-gonic/gin
-go get -u gorm.io/gorm
-go get -u gorm.io/driver/sqlite
-go get -u golang.org/x/crypto/bcrypt
+cat > go.mod << EOF
+module github.com/cannotenroll/order-system
+
+go 1.21.5
+
+require (
+	github.com/gin-gonic/gin v1.9.1
+	github.com/mattn/go-sqlite3 v1.14.19
+	golang.org/x/crypto v0.16.0
+	gorm.io/driver/sqlite v1.5.4
+	gorm.io/gorm v1.25.5
+)
+EOF
+
+# 下载依赖
+go mod download
 go mod tidy
 
 # 编译后端程序
 echo "编译后端程序..."
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
 go build -v -o order-system || {
     echo "编译失败"
     exit 1
