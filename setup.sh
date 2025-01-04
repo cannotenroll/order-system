@@ -54,14 +54,14 @@ cd backend || exit 1
 rm -f ../go.mod ../go.sum
 rm -f go.mod go.sum
 
-go mod init github.com/cannotenroll/order-system
+# 清理旧文件
+rm -f order-system go.mod go.sum
 
-# 安装 Go 依赖
-echo "安装 Go 依赖..."
+# 初始化新的 go.mod
 cat > go.mod << EOF
 module github.com/cannotenroll/order-system
 
-go 1.21.5
+go 1.21
 
 require (
 	github.com/gin-gonic/gin v1.9.1
@@ -72,45 +72,20 @@ require (
 )
 EOF
 
-# 下载依赖
-go mod download
+# 下载依赖并整理
 go mod tidy
 
-# 编译后端程序
-echo "编译后端程序..."
-echo "当前目录: $(pwd)"
-echo "Go 版本: $(go version)"
-echo "Go 环境: $(go env GOPATH)"
-
-# 确保 go.sum 文件存在
-go mod download
-go mod tidy
-
-CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-go build -v -x -o order-system || {
-    echo "编译失败"
-    echo "编译错误日志："
-    cat /var/log/order-system.error.log
-    exit 1
-}
+# 编译（添加详细输出）
+CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -v -x -o order-system
 
 # 检查编译结果
-echo "检查编译结果..."
-if [ ! -f "order-system" ]; then
-    echo "编译后的程序不存在"
-    ls -la
-    exit 1
-fi
+ls -l order-system
 
-echo "编译成功，程序大小: $(ls -lh order-system)"
-
-# 设置可执行权限
+# 设置执行权限
 chmod +x order-system
 
-# 验证程序是否可执行
-echo "验证程序..."
-file order-system
-ldd order-system || true
+# 运行程序
+./order-system
 
 # 创建日志目录和文件
 echo "创建日志文件..."
