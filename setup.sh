@@ -8,32 +8,71 @@ fi
 
 # 设置工作目录
 WORK_DIR="/root/projects/order-system"
+echo "工作目录: $WORK_DIR"
 
 # 安装必要的系统包
+echo "正在更新系统包..."
 apt update
 apt install -y git golang-go sqlite3
 
+# 清理旧的安装（如果存在）
+echo "清理旧的安装..."
+systemctl stop order-system 2>/dev/null
+rm -rf $WORK_DIR
+rm -f /etc/systemd/system/order-system.service
+rm -f /var/log/order-system.log
+rm -f /var/log/order-system.error.log
+
 # 创建项目目录
+echo "创建项目目录..."
 mkdir -p $WORK_DIR
-cd $WORK_DIR
+cd $WORK_DIR || exit 1
 
 # 克隆项目代码
-git clone https://github.com/cannotenroll/order-system.git .
+echo "克隆项目代码..."
+git clone https://github.com/cannotenroll/order-system.git . || {
+    echo "克隆代码失败"
+    exit 1
+}
 
 # 进入后端目录并初始化 Go 模块
-cd backend
+echo "初始化 Go 模块..."
+cd backend || exit 1
 go mod init github.com/cannotenroll/order-system
 
 # 安装 Go 依赖
+echo "安装 Go 依赖..."
 go get -u github.com/gin-gonic/gin
 go get -u gorm.io/gorm
 go get -u gorm.io/driver/sqlite
 go get -u golang.org/x/crypto/bcrypt
+go mod tidy
 
 # 编译后端程序
-go build -o order-system
+echo "编译后端程序..."
+go build -v -o order-system || {
+    echo "编译失败"
+    exit 1
+}
+
+# 检查编译结果
+if [ ! -f "order-system" ]; then
+    echo "编译后的程序不存在"
+    exit 1
+fi
+
+# 设置可执行权限
+chmod +x order-system
+
+# 创建日志目录和文件
+echo "创建日志文件..."
+touch /var/log/order-system.log
+touch /var/log/order-system.error.log
+chmod 644 /var/log/order-system.log
+chmod 644 /var/log/order-system.error.log
 
 # 创建系统服务
+echo "创建系统服务..."
 cat > /etc/systemd/system/order-system.service << EOF
 [Unit]
 Description=Order System Backend Service
@@ -44,13 +83,17 @@ Type=simple
 User=root
 WorkingDirectory=/root/projects/order-system/backend
 ExecStart=/root/projects/order-system/backend/order-system
-Restart=always
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/order-system.log
+StandardError=append:/var/log/order-system.error.log
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 # 更新 Caddy 配置
+echo "更新 Caddy 配置..."
 cat > /etc/caddy/Caddyfile << EOF
 order.076095598.xyz {
     reverse_proxy localhost:8080
@@ -58,21 +101,37 @@ order.076095598.xyz {
 EOF
 
 # 重新加载系统服务
+echo "重新加载系统服务..."
 systemctl daemon-reload
 
 # 启动并设置开机自启
+echo "启动服务..."
 systemctl enable order-system
 systemctl start order-system
 
-# 重启 Caddy
-systemctl restart caddy
+# 等待服务启动
+sleep 2
 
 # 检查服务状态
 echo "检查服务状态..."
-systemctl status order-system
-systemctl status caddy
+if ! systemctl is-active --quiet order-system; then
+    echo "服务启动失败，查看错误日志："
+    tail -n 20 /var/log/order-system.error.log
+    journalctl -u order-system -n 50 --no-pager
+    exit 1
+fi
 
-# 输出测试说明
+# 重启 Caddy
+echo "重启 Caddy..."
+systemctl restart caddy
+
+# 检查服务是否正常运行
+echo "测试服务..."
+curl -s http://localhost:8080/api/health || {
+    echo "服务测试失败"
+    exit 1
+}
+
 echo "
 安装完成！请使用以下命令测试系统：
 
@@ -85,13 +144,19 @@ echo "
 如果返回 {\"status\":\"ok\"} 则表示系统运行正常。
 
 查看日志：
-- 后端日志：journalctl -u order-system -f
+- 应用日志：tail -f /var/log/order-system.log
+- 错误日志：tail -f /var/log/order-system.error.log
+- 系统日志：journalctl -u order-system -f
 - Caddy日志：journalctl -u caddy -f
 "
 
 # 创建日志快捷方式
-echo 'alias order-logs="journalctl -u order-system -f"' >> /root/.bashrc
+echo 'alias order-logs="tail -f /var/log/order-system.log"' >> /root/.bashrc
+echo 'alias order-errors="tail -f /var/log/order-system.error.log"' >> /root/.bashrc
+echo 'alias order-journal="journalctl -u order-system -f"' >> /root/.bashrc
 echo 'alias caddy-logs="journalctl -u caddy -f"' >> /root/.bashrc
 
 # 应用新的别名
-source /root/.bashrc 
+source /root/.bashrc
+
+echo "脚本执行完成" 
