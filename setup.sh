@@ -46,6 +46,245 @@ git clone https://github.com/cannotenroll/order-system.git . || {
     exit 1
 }
 
+# 更新 main.go 文件
+echo "更新 main.go 文件..."
+cat > $WORK_DIR/backend/main.go << EOF
+package main
+
+import (
+	"github.com/cannotenroll/order-system/config"
+	"github.com/cannotenroll/order-system/controllers"
+	"github.com/cannotenroll/order-system/models"
+	"github.com/cannotenroll/order-system/routes"
+	"github.com/gin-gonic/gin"
+)
+
+func main() {
+	// 初始化数据库
+	db := config.InitDB()
+
+	// 初始化控制器
+	controllers.InitDB(db)
+
+	// 自动迁移数据库表
+	db.AutoMigrate(&models.User{}, &models.Order{})
+
+	// 创建默认管理员账号
+	var adminUser models.User
+	if db.Where("username = ?", "admin").First(&adminUser).RowsAffected == 0 {
+		adminUser = models.User{
+			Username: "admin",
+			Password: "admin1234",
+			IsAdmin:  true,
+		}
+		db.Create(&adminUser)
+	}
+
+	// 初始化 Gin
+	r := gin.Default()
+
+	// 设置路由
+	routes.SetupRoutes(r)
+
+	// 启动服务器
+	r.Run(":8080")
+}
+EOF
+
+# 创建前端目录和页面
+echo "创建前端基础页面..."
+mkdir -p $WORK_DIR/frontend/dist
+
+# 创建临时前端页面
+cat > $WORK_DIR/frontend/dist/index.html << EOF
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>订餐系统</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f5f5f5;
+        }
+        .login-container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 400px;
+        }
+        .form-group {
+            margin-bottom: 15px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="login-container">
+        <h2 style="text-align: center;">订餐系统登录</h2>
+        <form id="loginForm">
+            <div class="form-group">
+                <label for="username">用户名：</label>
+                <input type="text" id="username" name="username" required>
+            </div>
+            <div class="form-group">
+                <label for="password">密码：</label>
+                <input type="password" id="password" name="password" required>
+            </div>
+            <button type="submit">登录</button>
+            <p id="error" class="error"></p>
+        </form>
+    </div>
+    <script>
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+            
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ username, password }),
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    localStorage.setItem('token', data.token);
+                    window.location.href = '/dashboard';
+                } else {
+                    const error = await response.json();
+                    document.getElementById('error').textContent = error.message || '登录失败';
+                }
+            } catch (error) {
+                document.getElementById('error').textContent = '网络错误，请稍后重试';
+            }
+        });
+    </script>
+</body>
+</html>
+EOF
+
+# 创建认证控制器
+echo "创建认证控制器..."
+mkdir -p $WORK_DIR/backend/controllers
+cat > $WORK_DIR/backend/controllers/auth.go << 'EOF'
+package controllers
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/cannotenroll/order-system/models"
+	"gorm.io/gorm"
+	"net/http"
+)
+
+var db *gorm.DB
+
+func InitDB(database *gorm.DB) {
+	db = database
+}
+
+func Login(c *gin.Context) {
+	var loginData struct {
+		Username string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&loginData); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "请输入用户名和密码"})
+		return
+	}
+
+	var user models.User
+	if err := db.Where("username = ?", loginData.Username).First(&user).Error; err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
+		return
+	}
+
+	if !user.CheckPassword(loginData.Password) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "用户名或密码错误"})
+		return
+	}
+
+	// TODO: 生成 JWT token
+	token := "temporary-token"
+
+	c.JSON(http.StatusOK, gin.H{
+		"token": token,
+		"user": gin.H{
+			"username": user.Username,
+			"isAdmin": user.IsAdmin,
+		},
+	})
+}
+EOF
+
+# 更新路由配置
+echo "更新路由配置..."
+cat > $WORK_DIR/backend/routes/routes.go << EOF
+package routes
+
+import (
+	"github.com/gin-gonic/gin"
+	"github.com/cannotenroll/order-system/controllers"
+)
+
+func SetupRoutes(r *gin.Engine) {
+	// 基础路由组
+	api := r.Group("/api")
+
+	// 健康检查
+	api.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{
+			"status": "ok",
+		})
+	})
+
+	// 认证路由
+	auth := api.Group("/auth")
+	{
+		auth.POST("/login", controllers.Login)
+	}
+}
+EOF
+
 # 进入后端目录并初始化 Go 模块
 echo "初始化 Go 模块..."
 cd backend || exit 1
@@ -84,8 +323,8 @@ ls -l order-system
 # 设置执行权限
 chmod +x order-system
 
-# 运行程序
-./order-system
+# 停止正在运行的服务（如果有）
+systemctl stop order-system 2>/dev/null || true
 
 # 创建日志目录和文件
 echo "创建日志文件..."
@@ -123,7 +362,20 @@ EOF
 echo "更新 Caddy 配置..."
 cat > /etc/caddy/Caddyfile << EOF
 order.076095598.xyz {
-    reverse_proxy localhost:8080
+    # API 请求转发到后端
+    handle /api/* {
+        reverse_proxy localhost:8080
+    }
+
+    # 静态文件服务
+    handle {
+        root * /root/projects/order-system/frontend/dist
+        try_files {path} /index.html
+        file_server
+    }
+
+    # 启用 gzip 压缩
+    encode gzip
 }
 EOF
 
