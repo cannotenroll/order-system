@@ -49,6 +49,11 @@ git clone https://github.com/cannotenroll/order-system.git . || {
 # 进入后端目录并初始化 Go 模块
 echo "初始化 Go 模块..."
 cd backend || exit 1
+
+# 删除可能存在的旧 go.mod 文件
+rm -f ../go.mod ../go.sum
+rm -f go.mod go.sum
+
 go mod init github.com/cannotenroll/order-system
 
 # 安装 Go 依赖
@@ -73,20 +78,39 @@ go mod tidy
 
 # 编译后端程序
 echo "编译后端程序..."
+echo "当前目录: $(pwd)"
+echo "Go 版本: $(go version)"
+echo "Go 环境: $(go env GOPATH)"
+
+# 确保 go.sum 文件存在
+go mod download
+go mod tidy
+
 CGO_ENABLED=1 GOOS=linux GOARCH=amd64 \
-go build -v -o order-system || {
+go build -v -x -o order-system || {
     echo "编译失败"
+    echo "编译错误日志："
+    cat /var/log/order-system.error.log
     exit 1
 }
 
 # 检查编译结果
+echo "检查编译结果..."
 if [ ! -f "order-system" ]; then
     echo "编译后的程序不存在"
+    ls -la
     exit 1
 fi
 
+echo "编译成功，程序大小: $(ls -lh order-system)"
+
 # 设置可执行权限
 chmod +x order-system
+
+# 验证程序是否可执行
+echo "验证程序..."
+file order-system
+ldd order-system || true
 
 # 创建日志目录和文件
 echo "创建日志文件..."
@@ -97,6 +121,9 @@ chmod 644 /var/log/order-system.error.log
 
 # 创建系统服务
 echo "创建系统服务..."
+BINARY_PATH="$(pwd)/order-system"
+echo "二进制文件路径: $BINARY_PATH"
+
 cat > /etc/systemd/system/order-system.service << EOF
 [Unit]
 Description=Order System Backend Service
@@ -106,11 +133,12 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/root/projects/order-system/backend
-ExecStart=/root/projects/order-system/backend/order-system
+ExecStart=$BINARY_PATH
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:/var/log/order-system.log
 StandardError=append:/var/log/order-system.error.log
+Environment=GIN_MODE=release
 
 [Install]
 WantedBy=multi-user.target
@@ -130,6 +158,12 @@ systemctl daemon-reload
 
 # 启动并设置开机自启
 echo "启动服务..."
+if [ ! -x "$BINARY_PATH" ]; then
+    echo "错误：程序文件不存在或不可执行"
+    ls -l "$BINARY_PATH"
+    exit 1
+fi
+
 systemctl enable order-system
 systemctl start order-system
 
